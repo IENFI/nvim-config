@@ -2,6 +2,19 @@
 set number                " 줄 번호 표시
 set encoding=utf-8        " UTF-8 인코딩
 
+let s:is_windows = has('win32') || has('win64')
+let mapleader = " "
+
+" F5 및 플러그인의 && 명령을 Windows PowerShell 5에서도 실행 가능하게 한다.
+if s:is_windows
+  set shell=cmd.exe
+  set shellcmdflag=/s\ /c
+  set shellquote=
+  set shellxquote=\"
+  set shellredir=>%s\ 2>&1
+  set shellpipe=>%s\ 2>&1
+endif
+
 " 24bit 색 활성화
 set termguicolors  " 24-bit 색상 활성화(안 켜면 색이 탁해짐)
 
@@ -17,11 +30,18 @@ set langmap=ㅂq,ㅠw,ㅊe,ㄷr,ㅌt,ㄴy,ㅕu,ㅑi,ㅐo,ㅔp,ㅁa,ㄹs,ㄴd,ㅎ
 
 "  Neovim plugin manager setup
 " ==============================
-call plug#begin('~/.vim/plugged')
+if empty(globpath(&runtimepath, 'autoload/plug.vim'))
+  echohl WarningMsg
+  echom 'vim-plug is missing. Follow README.md to install it, then restart Neovim.'
+  echohl None
+  finish
+endif
+" macOS는 기존 설치 위치를 유지하고 Windows는 Neovim 데이터 폴더를 사용한다.
+call plug#begin(s:is_windows ? stdpath('data') . '/plugged' : expand('~/.vim/plugged'))
 Plug 'windwp/nvim-autopairs'
 
 " Treesitter syntax highlighting
-Plug 'nvim-treesitter/nvim-treesitter', {'do': ':TSUpdate'}
+Plug 'nvim-treesitter/nvim-treesitter', {'branch': 'master', 'do': ':TSUpdate'}
 
 " LSP configuration helper
 Plug 'neovim/nvim-lspconfig'
@@ -60,7 +80,11 @@ Plug 'ramojus/mellifluous.nvim'
 Plug 'keaising/im-select.nvim'
 
 " 1️⃣ 브라우저 미리보기 (iamcco/markdown-preview.nvim)
-Plug 'iamcco/markdown-preview.nvim', { 'do': 'cd app && npx --yes yarn install' }
+if s:is_windows
+  Plug 'iamcco/markdown-preview.nvim', { 'do': { -> mkdp#util#install() } }
+else
+  Plug 'iamcco/markdown-preview.nvim', { 'do': 'cd app && npx --yes yarn install' }
+endif
 
 " 2️⃣ 터미널 안에서 렌더링 (ellisonleao/glow.nvim)
 Plug 'ellisonleao/glow.nvim', {'branch': 'main'}
@@ -77,12 +101,35 @@ Plug 'hrsh7th/cmp-nvim-lsp'
 
 call plug#end()
 
+" 최초 설치 전에는 require() 오류 없이 :PlugInstall을 실행할 수 있다.
+if !empty(filter(values(copy(g:plugs)), '!isdirectory(v:val.dir)'))
+  echohl WarningMsg
+  echom 'Plugins are missing. Run :PlugInstall, then restart Neovim.'
+  echohl None
+  finish
+endif
+
 " ==============================
 "  Basic Treesitter settings
 " ==============================
 lua << EOF
+local is_windows = vim.fn.has('win32') == 1 or vim.fn.has('win64') == 1
+
+-- 괄호/따옴표 자동 완성 활성화. Enter는 기존 CoC/cmp 매핑을 유지한다.
+require('nvim-autopairs').setup({ map_cr = false })
+
+local has_c_compiler = false
+for _, compiler in ipairs(require('nvim-treesitter.install').compilers) do
+  if type(compiler) == 'string' and vim.fn.executable(compiler) == 1 then
+    has_c_compiler = true
+    break
+  end
+end
+
 require'nvim-treesitter.configs'.setup {
-  ensure_installed = { "lua", "python", "javascript", "html", "css" },
+  -- Windows는 수동 설치만 사용해 시작 시 설치와 :TSInstall의 경합을 피한다.
+  -- macOS는 컴파일러가 있으면 기존처럼 자동 설치하며, 설치된 파서는 계속 사용한다.
+  ensure_installed = (not is_windows and has_c_compiler) and { "lua", "python", "javascript", "html", "css" } or {},
   highlight = {
     enable = true,
   },
@@ -100,11 +147,12 @@ require("nvim-tree").setup({
     custom = {},
   },
 
-  -- 선택: CWD와 루트 동기화 및 포커스 파일 기준 루트 갱신
-  sync_root_with_cwd = true,
+  -- 파일/작업 폴더를 바꿔도 트리 루트와 커서가 자동으로 이동하지 않는다.
+  sync_root_with_cwd = false,
+  respect_buf_cwd = false,
   update_focused_file = {
-    enable = true,
-    update_root = true,
+    enable = false,
+    update_root = false,
   },
 
   on_attach = function(bufnr)
@@ -150,6 +198,7 @@ require('gitsigns').setup {
     virt_text = true,
     virt_text_pos = 'eol', -- eol | overlay | right_align
     delay = 300,
+  },
   current_line_blame_formatter = '<author>, <author_time:%Y-%m-%d> • <summary>',
 
   -- 프리뷰 팝업 창 모양
@@ -158,7 +207,6 @@ require('gitsigns').setup {
   -- 성능/안전 옵션
   attach_to_untracked = true,
   max_file_length = 4000,     -- 너무 큰 파일엔 자동 비활성화
-  },
 }
 
 require('lualine').setup({
@@ -232,8 +280,8 @@ vim.o.background = "dark"
 vim.cmd("colorscheme mellifluous")
 
 require('im_select').setup({
-  default_command = 'im-select',
-  default_im_select = 'com.apple.keylayout.ABC',  -- A에서 얻은 영어 ID로 변경
+  default_command = is_windows and 'im-select.exe' or 'im-select',
+  default_im_select = is_windows and '1033' or 'com.apple.keylayout.ABC',
   -- 노멀/커맨드라인에서 영어로
   set_default_events = { 'VimEnter', 'InsertLeave', 'CmdlineLeave', 'FocusGained' },
   -- 인서트/커맨드라인 진입 시 직전 입력기 복원
@@ -276,7 +324,7 @@ vim.api.nvim_create_autocmd("FileType", {
   callback = function()
     local root_dir = jdtls.setup.find_root(root_markers)
 
-    if root_dir == "" then
+    if not root_dir or root_dir == "" then
       root_dir = vim.fn.getcwd()
     end
 
@@ -290,12 +338,20 @@ vim.api.nvim_create_autocmd("FileType", {
     local capabilities =
       require("cmp_nvim_lsp").default_capabilities()
 
+    local launcher = vim.fn.stdpath("data") .. "/mason/bin/"
+      .. (is_windows and "jdtls.cmd" or "jdtls")
+    if vim.fn.filereadable(launcher) == 0 then
+      vim.notify("Java LSP: run :MasonInstall jdtls, then reopen the Java file.", vim.log.levels.WARN)
+      return
+    end
+    local cmd = { launcher, "-data", workspace_dir }
+    if is_windows then
+      -- .cmd는 cmd.exe를 통해 실행하며, 공백이 있는 경로도 개별 인자로 전달한다.
+      cmd = { "cmd.exe", "/c", launcher, "-data", workspace_dir }
+    end
+
     jdtls.start_or_attach({
-      cmd = {
-        vim.fn.stdpath("data") .. "/mason/bin/jdtls",
-        "-data",
-        workspace_dir,
-      },
+      cmd = cmd,
 
       root_dir = root_dir,
       capabilities = capabilities,
@@ -456,6 +512,32 @@ function! RunJavaCurrentFile()
   let l:file = expand('%:p')
   let l:filename = expand('%:t:r')
 
+  " macOS는 기존 작업 폴더에서 실행한다. Windows만 프로젝트 루트를 탐색한다.
+  let l:dir = expand('%:p:h')
+  let l:root = getcwd()
+  if s:is_windows
+    let l:root = l:dir
+    while 1
+      if isdirectory(l:dir . '/.git') || filereadable(l:dir . '/.git')
+            \ || filereadable(l:dir . '/.project')
+            \ || filereadable(l:dir . '/pom.xml')
+            \ || filereadable(l:dir . '/build.gradle')
+            \ || filereadable(l:dir . '/build.gradle.kts')
+        let l:root = l:dir
+        break
+      endif
+      if fnamemodify(l:dir, ':t') ==# 'src'
+        let l:root = fnamemodify(l:dir, ':h')
+        break
+      endif
+      let l:parent = fnamemodify(l:dir, ':h')
+      if l:parent ==# l:dir
+        break
+      endif
+      let l:dir = l:parent
+    endwhile
+  endif
+
   " package 선언 찾기
   let l:package = ''
   for l:line in getline(1, min([line('$'), 30]))
@@ -472,13 +554,19 @@ function! RunJavaCurrentFile()
     let l:class = l:package . '.' . l:filename
   endif
 
-  " 프로젝트 루트 기준 src -> bin 컴파일
+  " Windows에서는 프로젝트 루트를 실행 위치로 사용한다.
   let l:cmd = 'javac -d bin ' . shellescape(l:file)
         \ . ' && java -cp bin ' . shellescape(l:class)
 
   belowright split
   resize 12
-  execute 'terminal ' . l:cmd
+  if s:is_windows
+    enew
+    call termopen(l:cmd, {'cwd': l:root})
+    startinsert
+  else
+    execute 'terminal ' . l:cmd
+  endif
 endfunction
 
 nnoremap <F5> :call RunJavaCurrentFile()<CR>
