@@ -1,0 +1,24 @@
+{
+  // 기본은 저장 시 포맷 끄기
+  "coc.preferences.formatOnSave": false,
+
+  // 언어별로만 저장 시 포맷 켜기
+  "[javascript]": { "coc.preferences.formatOnSave": true },
+  "[javascriptreact]": { "coc.preferences.formatOnSave": true },
+  "[typescript]": { "coc.preferences.formatOnSave": true },
+  "[typescriptreact]": { "coc.preferences.formatOnSave": true },
+  "[json]": { "coc.preferences.formatOnSave": true },
+  "[css]": { "coc.preferences.formatOnSave": true },
+  "[scss]": { "coc.preferences.formatOnSave": true },
+  "[markdown]": { "coc.preferences.formatOnSave": true },
+
+  // Prettier만 사용(팀 로컬 버전 강제)
+  "prettier.enable": true,
+  "prettier.prettierPath": "./node_modules/prettier",
+  "prettier.configPath": "./packages/config/prettier/.prettierrc",
+  "prettier.requireConfig": true,
+
+  // ESLint는 포맷/수정 비활성화(중복 방지)
+  "eslint.format.enable": false,
+  "eslint.autoFixOnSave": false
+}
